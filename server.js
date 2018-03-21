@@ -1,0 +1,140 @@
+ï»¿	//httpĞ­ÒéÄ£¿é
+    var http = require('http');
+    //url½âÎöÄ£¿é
+    var url = require('url');
+    //ÎÄ¼şÏµÍ³Ä£¿é
+    var fs = require("fs");
+    //Â·¾¶½âÎöÄ£¿é
+    var path = require("path");
+	
+    var httpServer = {
+		//Æô¶¯·şÎñ
+        start:function(){
+            var port = this.config.port;
+            var ip = this.config.ip;
+
+            //´´½¨Ò»¸ö·şÎñ
+            var httpServer = http.createServer(this.processRequest.bind(this));
+
+            //ÔÚÖ¸¶¨µÄ¶Ë¿Ú¼àÌı·şÎñ
+            httpServer.listen(port,function(){
+                console.log("[HttpServer][Start]","runing at http://"+ip+":"+port+"/");
+              
+            });
+
+            httpServer.on("error", function(error) {
+                console.error(error);
+            });
+        },
+
+        /**
+         * ÇëÇó´¦Àí
+         * @param request
+         * @param response
+         */
+        processRequest:function(request,response){
+            var hasExt = true;
+            var requestUrl = request.url;
+            var pathName = url.parse(requestUrl).pathname;
+
+            //¶ÔÇëÇóµÄÂ·¾¶½øĞĞ½âÂë£¬·ÀÖ¹ÖĞÎÄÂÒÂë
+            pathName = decodeURI(pathName);
+
+            //Èç¹ûÂ·¾¶ÖĞÃ»ÓĞÀ©Õ¹Ãû
+            if(path.extname(pathName) === ''){
+                //Èç¹û²»ÊÇÒÔ/½áÎ²µÄ£¬¼Ó/²¢×÷301ÖØ¶¨Ïò
+                if (pathName.charAt(pathName.length-1) != "/"){
+                    pathName += "/";
+                    var redirect = "http://"+request.headers.host + pathName;
+                    response.writeHead(301, {
+                        location:redirect
+                    });
+                    response.end();
+                    return ; //fix bug: Ö´ĞĞ301ÖØ¶¨ÏòºóÓ¦ÖÕÖ¹ºóĞøÁ÷³Ì£¬ÒÔ·À "write after end" Òì³£ £¨2017-4-21 23:11:37£©
+                }
+                //Ìí¼ÓÄ¬ÈÏµÄ·ÃÎÊÒ³Ãæ,µ«Õâ¸öÒ³Ãæ²»Ò»¶¨´æÔÚ,ºóÃæ»á´¦Àí
+                pathName += "index.html";
+                hasExt = false; //±ê¼ÇÄ¬ÈÏÒ³ÃæÊÇ³ÌĞò×Ô¶¯Ìí¼ÓµÄ
+            }
+
+            //»ñÈ¡×ÊÔ´ÎÄ¼şµÄÏà¶ÔÂ·¾¶
+            var filePath = path.join("webapp",pathName);
+
+            //»ñÈ¡¶ÔÓ¦ÎÄ¼şµÄÎÄµµÀàĞÍ
+            var contentType = this.getContentType(filePath);
+
+            //Èç¹ûÎÄ¼şÃû´æÔÚ
+            fs.exists(filePath,function(exists){
+                if(exists){
+                    response.writeHead(200, {"content-type":contentType});
+                    var stream = fs.createReadStream(filePath,{flags:"r",encoding:null});
+                    stream.on("error", function() {
+                        response.writeHead(500,{"content-type": "text/html"});
+                        response.end("<h1>500 Server Error</h1>");
+                    });
+                    //·µ»ØÎÄ¼şÄÚÈİ
+                    stream.pipe(response);
+                }else { //ÎÄ¼şÃû²»´æÔÚµÄÇé¿ö
+                    if(hasExt){
+                        //Èç¹ûÕâ¸öÎÄ¼ş²»ÊÇ³ÌĞò×Ô¶¯Ìí¼ÓµÄ£¬Ö±½Ó·µ»Ø404
+                        response.writeHead(404, {"content-type": "text/html"});
+                        response.end("<h1>404 Not Found</h1>");
+                    }else {
+                        //Èç¹ûÎÄ¼şÊÇ³ÌĞò×Ô¶¯Ìí¼ÓµÄÇÒ²»´æÔÚ£¬Ôò±íÊ¾ÓÃ»§Ï£Íû·ÃÎÊµÄÊÇ¸ÃÄ¿Â¼ÏÂµÄÎÄ¼şÁĞ±í
+                        var html = "<head><meta charset='utf-8'></head>";
+
+                        try{
+                            //ÓÃ»§·ÃÎÊÄ¿Â¼
+                            var filedir = filePath.substring(0,filePath.lastIndexOf('\\'));
+                            //»ñÈ¡ÓÃ»§·ÃÎÊÂ·¾¶ÏÂµÄÎÄ¼şÁĞ±í
+                            var files = fs.readdirSync(filedir);
+                            //½«·ÃÎÊÂ·¾¶ÏÂµÄËùÒÔÎÄ¼şÒ»Ò»ÁĞ¾Ù³öÀ´£¬²¢Ìí¼Ó³¬Á´½Ó£¬ÒÔ±ãÓÃ»§½øÒ»²½·ÃÎÊ
+                            for(var i in files){
+                                var filename = files[i];
+                                html += "<div><a  href='"+filename+"'>"+filename+"</a></div>";
+                            }
+                        }catch (e){
+                            html += "<h1>Äú·ÃÎÊµÄÄ¿Â¼²»´æÔÚ</h1>"
+                        }
+                        response.writeHead(200, {"content-type": "text/html"});
+                        response.end(html);
+                    }
+                }
+            });
+        },
+
+        /**
+         * »ñÈ¡ÎÄµµµÄÄÚÈİÀàĞÍ
+         * @param filePath
+         * @returns {*}
+         */
+        getContentType:function(filePath){
+            var contentType = this.config.mime;
+            var ext = path.extname(filePath).substr(1);
+            if (contentType.hasOwnProperty(ext)){
+                return contentType[ext];
+            }else {
+                return contentType.default;
+            }
+        },
+
+        ///ÅäÖÃĞÅÏ¢
+        config:{
+            port:8888,
+            ip:'127.0.0.1',
+            mime:{
+                html:"text/html",
+                js:"text/javascript",
+                css:"text/css",
+                gif:"image/gif",
+                jpg:"image/jpeg",
+                png:"image/png",
+                ico:"image/icon",
+                txt:"text/plain",
+                json:"application/json",
+                default:"application/octet-stream"
+            }
+        }
+	}
+	
+	httpServer.start();
